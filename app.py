@@ -1,9 +1,3 @@
-            st.download_button(
-                label="📥 SRT File Download ဆွဲမည်",
-                data=srt_output,
-                file_name="chinese_subtitle.srt",
-                mime="text/plain"
-            )
 import os
 import sys
 import subprocess

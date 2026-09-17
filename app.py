@@ -2,7 +2,9 @@ import streamlit as st
 import whisper
 import os
 import subprocess
-from deep_translator import GoogleTranslator
+import urllib.parse
+import urllib.request
+import json
 
 # Ensure FFmpeg is installed
 try:
@@ -10,6 +12,19 @@ try:
 except Exception:
     st.info("Installing FFmpeg dependencies...")
     os.system("apt-get update && apt-get install -y ffmpeg")
+
+def translate_to_myanmar(text):
+    if not text.strip():
+        return text
+    try:
+        url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=my&dt=t&q=" + urllib.parse.quote(text)
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        response = urllib.request.urlopen(req)
+        data = json.loads(response.read().decode('utf-8'))
+        translated_text = "".join([item[0] for item in data[0] if item[0]])
+        return translated_text
+    except Exception:
+        return text
 
 st.title("Chinese to Burmese SRT Subtitle Generator")
 st.write("Upload a Chinese video to generate Burmese subtitles (.srt)")
@@ -26,11 +41,8 @@ if uploaded_file is not None:
     # Load Whisper Model
     model = whisper.load_model("base")
     
-    # Chinese speech -> English transcription
+    # Chinese speech -> English text
     result = model.transcribe(video_path, task="translate")
-    
-    # Initialize Translator
-    translator = GoogleTranslator(source='en', target='my')
     
     srt_content = ""
     total_segments = len(result['segments'])
@@ -41,11 +53,8 @@ if uploaded_file is not None:
         end = segment['end']
         text = segment['text'].strip()
         
-        # Translate to Burmese
-        try:
-            translated_text = translator.translate(text)
-        except Exception:
-            translated_text = text
+        # Translate to Burmese via Google Translate API
+        translated_text = translate_to_myanmar(text)
             
         def format_time(seconds):
             hrs = int(seconds // 3600)

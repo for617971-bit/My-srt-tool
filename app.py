@@ -1,51 +1,72 @@
-import os
-import sys
-import subprocess
 import streamlit as st
-
-# ImageMagick & FFmpeg Auto Installer for Streamlit Cloud
-st.title("🎬 Subtitle Generator (Chinese to Burmese)")
-
-@st.cache_resource
-def install_ffmpeg():
-    try:
-        subprocess.run(["ffmpeg", "-version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    except Exception:
-        st.warning("FFmpeg ကို စနစ်ထဲ ထည့်သွင်းနေပါသည်... ခဏစောင့်ပေးပါ။")
-        os.system("apt-get update && apt-get install -y ffmpeg")
-
-install_ffmpeg()
-
 import whisper
+import os
+import subprocess
+from deep_translator import GoogleTranslator
 
-st.write("ဗီဒီယိုဖိုင် တင်ပြီး SRT စာတန်းထိုး ထုတ်ယူနိုင်ပါပြီ။")
+# Ensure FFmpeg is installed
+try:
+    subprocess.run(["ffmpeg", "-version"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+except Exception:
+    st.info("Installing FFmpeg dependencies...")
+    os.system("apt-get update && apt-get install -y ffmpeg")
 
-uploaded_file = st.file_uploader("ဗီဒီယိုဖိုင် ရွေးပါ", type=["mp4", "mkv", "mov", "avi"])
+st.title("Chinese to Burmese SRT Subtitle Generator")
+st.write("Upload a Chinese video to generate Burmese subtitles (.srt)")
+
+uploaded_file = st.file_uploader("Upload Video", type=["mp4", "mkv", "mov", "avi", "webm"])
 
 if uploaded_file is not None:
-    st.video(uploaded_file)
-    if st.button("🚀 SRT စာတန်းထိုး စတင်ထုတ်ယူမည်"):
-        with st.spinner("အသံကို စာသားပြောင်းနေပါသည်... (ခဏစောင့်ပေးပါ)"):
-            with open("temp_video.mp4", "wb") as f:
-                f.write(uploaded_file.read())
+    video_path = "temp_video.mp4"
+    with open(video_path, "wb") as f:
+        f.write(uploaded_file.read())
+    
+    st.info("Processing Chinese Speech & Translating to Burmese...")
+    
+    # Load Whisper Model
+    model = whisper.load_model("base")
+    
+    # Chinese speech -> English transcription
+    result = model.transcribe(video_path, task="translate")
+    
+    # Initialize Translator
+    translator = GoogleTranslator(source='en', target='my')
+    
+    srt_content = ""
+    total_segments = len(result['segments'])
+    progress_bar = st.progress(0)
+    
+    for i, segment in enumerate(result['segments'], start=1):
+        start = segment['start']
+        end = segment['end']
+        text = segment['text'].strip()
+        
+        # Translate to Burmese
+        try:
+            translated_text = translator.translate(text)
+        except Exception:
+            translated_text = text
             
-            model = whisper.load_model("base")
-            result = model.transcribe("temp_video.mp4")
+        def format_time(seconds):
+            hrs = int(seconds // 3600)
+            mins = int((seconds % 3600) // 60)
+            secs = int(seconds % 60)
+            millis = int((seconds - int(seconds)) * 1000)
+            return f"{hrs:02d}:{mins:02d}:{secs:02d},{millis:03d}"
             
-            srt_content = ""
-            for i, segment in enumerate(result['segments'], start=1):
-                start = segment['start']
-                end = segment['end']
-                text = segment['text']
-                
-                def format_time(seconds):
-                    hrs = int(seconds // 3600)
-                    mins = int((seconds % 3600) // 60)
-                    secs = int(seconds % 60)
-                    msecs = int((seconds - int(seconds)) * 1000)
-                    return f"{hrs:02d}:{mins:02d}:{secs:02d},{msecs:03d}"
-                
-                srt_content += f"{i}\n{format_time(start)} --> {format_time(end)}\n{text.strip()}\n\n"
-            
-            st.success("စာတန်းထိုး ထုတ်ယူမှု အောင်မြင်ပါသည်။")
-            st.download_button("📥 SRT ဖိုင် ဒေါင်းလုဒ်ဆွဲရန်", srt_content, file_name="subtitles.srt", mime="text/plain")
+        srt_content += f"{i}\n{format_time(start)} --> {format_time(end)}\n{translated_text}\n\n"
+        progress_bar.progress(i / total_segments)
+        
+    st.success("Burmese Subtitle Generated Successfully!")
+    
+    # Download Button
+    st.download_button(
+        label="Download Burmese SRT",
+        data=srt_content,
+        file_name="burmese_subtitles.srt",
+        mime="text/plain"
+    )
+    
+    # Clean up
+    if os.path.exists(video_path):
+        os.remove(video_path)
